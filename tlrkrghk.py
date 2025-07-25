@@ -4,8 +4,8 @@ import plotly.graph_objects as go
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="도/시/구 인구 피라미드", layout="wide")
-st.title("👥 도-시-구 단위 연령별 인구 피라미드 (2025년 6월 기준)")
+st.set_page_config(page_title="다중 지역 인구 피라미드", layout="wide")
+st.title("👥 도-시-구 다중 선택 인구 피라미드 비교 (2025년 6월 기준)")
 
 # CSV 업로드
 uploaded_file = st.file_uploader("📂 연령별 인구 데이터 (CSV, euc-kr 인코딩)", type=["csv"])
@@ -14,42 +14,30 @@ if uploaded_file is not None:
     try:
         df = pd.read_csv(uploaded_file, encoding="euc-kr")
 
-        # 지역 정보 분리
+        # 도/시/구 분리
         df = df.copy()
         df["도"] = df["행정구역"].str.extract(r"^([가-힣]+[도|시|특별시|광역시|자치시|자치도|특별자치도])")
         df["시"] = df["행정구역"].str.extract(r"^.+? ([가-힣]+[시|군|구])")
         df["구"] = df["행정구역"].str.extract(r".+? ([가-힣]+동|[가-힣]+구|[가-힣]+면|[가-힣]+읍)")
 
-        # 사이드바 선택 UI
-        st.sidebar.header("📍 지역 선택")
-        selected_do = st.sidebar.selectbox("도 (광역단체)", sorted(df["도"].dropna().unique()))
-        filtered_si = df[df["도"] == selected_do]["시"].dropna().unique()
-        selected_si = st.sidebar.selectbox("시 (기초단체)", sorted(filtered_si))
+        # 지역 식별용 라벨 생성
+        df["지역"] = df[["도", "시", "구"]].fillna("").agg(" ".join, axis=1).str.strip()
 
-        filtered_gu = df[(df["도"] == selected_do) & (df["시"] == selected_si)]["구"].dropna().unique()
-        gu_options = sorted(filtered_gu) if len(filtered_gu) > 0 else ["(해당 없음)"]
-        selected_gu = st.sidebar.selectbox("구/동/읍/면", gu_options)
-
-        # 대상 행정구역 이름 찾기
-        candidates = df[
-            (df["도"] == selected_do) &
-            (df["시"] == selected_si)
-        ]
-        if selected_gu != "(해당 없음)":
-            candidates = candidates[candidates["구"] == selected_gu]
-
-        if candidates.empty:
-            st.warning("선택한 행정구역에 해당하는 데이터가 없습니다.")
-            st.stop()
-
-        selected_row = candidates.iloc[0]
-
-        # 연령 그룹 선택
+        # 연령 그룹 설정
         st.sidebar.header("🎚️ 연령 그룹 선택")
         age_groups = [(f"{i}~{i+9}세", list(range(i, i+10))) for i in range(0, 100, 10)]
         age_groups.append(("100세 이상", list(range(100, 101))))
         group_names = [g[0] for g in age_groups]
         selected_groups = st.sidebar.multiselect("연령 그룹 선택", group_names, default=group_names)
+
+        # 지역 선택
+        st.sidebar.header("📍 비교할 지역 선택")
+        available_regions = df["지역"].dropna().unique()
+        selected_regions = st.sidebar.multiselect("여러 지역 선택", options=sorted(available_regions), default=sorted(available_regions)[:3])
+
+        if not selected_regions:
+            st.warning("최소 한 개 이상의 지역을 선택하세요.")
+            st.stop()
 
         # 연령 컬럼 정리
         male_cols = [col for col in df.columns if "남_" in col and "세" in col]
@@ -61,9 +49,8 @@ if uploaded_file is not None:
 
         age_mapping = {col: extract_age(col) for col in male_cols}
 
-        # 선택한 연령 범위에 해당하는 컬럼만 추출
+        # 선택 연령 그룹 컬럼
         selected_male_cols, selected_female_cols, selected_labels = [], [], []
-
         for group_name in selected_groups:
             group_range = dict(age_groups)[group_name]
             for col, age in age_mapping.items():
@@ -74,32 +61,42 @@ if uploaded_file is not None:
                         selected_female_cols.append(female_col)
                         selected_labels.append(col.split("_")[-1])
 
-        # 데이터 전처리
-        male_counts = selected_row[selected_male_cols].fillna(0).astype(str).str.replace(",", "").astype(float).astype(int)
-        female_counts = selected_row[selected_female_cols].fillna(0).astype(str).str.replace(",", "").astype(float).astype(int)
-
-        # 인구 피라미드 시각화
+        # 시각화
         fig = go.Figure()
-        fig.add_trace(go.Bar(
-            y=selected_labels,
-            x=-male_counts,
-            name="남자",
-            orientation="h",
-            marker_color="blue"
-        ))
-        fig.add_trace(go.Bar(
-            y=selected_labels,
-            x=female_counts,
-            name="여자",
-            orientation="h",
-            marker_color="red"
-        ))
 
-        title_text = f"{selected_do} {selected_si}"
-        if selected_gu != "(해당 없음)":
-            title_text += f" {selected_gu}"
+        colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
+        for idx, region in enumerate(selected_regions):
+            region_row = df[df["지역"] == region]
+            if region_row.empty:
+                continue
+
+            male = region_row[selected_male_cols].iloc[0].fillna(0).astype(str).str.replace(",", "").astype(float).astype(int)
+            female = region_row[selected_female_cols].iloc[0].fillna(0).astype(str).str.replace(",", "").astype(float).astype(int)
+
+            color = colors[idx % len(colors)]
+
+            fig.add_trace(go.Bar(
+                y=selected_labels,
+                x=-male,
+                name=f"{region} (남)",
+                orientation="h",
+                marker_color=color,
+                legendgroup=region
+            ))
+
+            fig.add_trace(go.Bar(
+                y=selected_labels,
+                x=female,
+                name=f"{region} (여)",
+                orientation="h",
+                marker_color=color,
+                opacity=0.5,
+                legendgroup=region,
+                showlegend=False
+            ))
+
         fig.update_layout(
-            title=f"{title_text} 인구 피라미드",
+            title="여러 지역 인구 피라미드 비교",
             barmode="relative",
             xaxis_title="인구수",
             yaxis_title="연령",
