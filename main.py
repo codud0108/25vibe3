@@ -63,7 +63,7 @@ with st.form("add_bookmark_form"):
                 "color": color
             })
             st.success("✅ 북마크 추가됨")
-            st.experimental_rerun()
+            st.stop()  # rerun 대신 안전하게 중단
         else:
             st.error("❌ 주소를 찾을 수 없습니다.")
 
@@ -118,8 +118,8 @@ for i, bm in enumerate(sorted_bookmarks):
         st.text(f"🏠 주소: {bm.get('address','')}")
         col1, col2 = st.columns(2)
         if col1.button("❌ 삭제", key=f"del_{i}"):
-            st.session_state.bookmarks.pop(i)
-            st.experimental_rerun()
+            del st.session_state.bookmarks[i]
+            st.rerun()
         if col2.button("✅ 저장", key=f"save_{i}"):
             st.success("✔️ 수정 완료")
 
@@ -132,4 +132,4 @@ if st.session_state.bookmarks:
 if st.button("🧹 전체 초기화"):
     st.session_state.bookmarks = []
     st.session_state.folder_colors = {}
-    st.experimental_rerun()
+    st.rerun()
