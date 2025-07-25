@@ -7,16 +7,17 @@ import pandas as pd
 
 # 페이지 설정
 st.set_page_config(page_title="📍 나만의 북마크 지도", layout="wide")
+st.title("🔐 북마크 지도 로그인")
 
-# 로그인 처리
+# 사용자 세션 초기화
 if "users" not in st.session_state:
     st.session_state.users = {}
 
-st.title("🔐 북마크 지도 로그인")
-
+# 로그인 입력
 username = st.text_input("이름", key="login_name")
 password = st.text_input("비밀번호", type="password", key="login_pwd")
 
+# 로그인 처리
 if st.button("로그인 / 회원가입"):
     if username and password:
         if username not in st.session_state.users:
@@ -30,6 +31,7 @@ if st.button("로그인 / 회원가입"):
             st.error("❌ 비밀번호가 틀렸습니다.")
             st.stop()
         st.session_state.current_user = username
+        st.session_state.map_center = st.session_state.users[username]["map_center"]
     else:
         st.warning("이름과 비밀번호를 모두 입력하세요.")
         st.stop()
@@ -37,17 +39,12 @@ if st.button("로그인 / 회원가입"):
 # 로그인 이후만 실행
 if "current_user" in st.session_state:
     user = st.session_state.users[st.session_state.current_user]
-
-    st.markdown("## 📍 북마크 추가 및 지도")
     default_colors = ["red", "blue", "green", "purple", "orange", "darkred", "lightblue", "black"]
     icons = ["info-sign", "home", "star", "flag", "cloud", "heart", "gift", "leaf"]
     geolocator = Nominatim(user_agent="bookmark_app")
 
-    all_folders = list(set(bm.get("folder", "기본") for bm in user["bookmarks"]))
-    selected_folder = st.selectbox("📂 폴더 필터", ["전체"] + sorted(all_folders))
-    query = st.text_input("🔍 북마크 검색 (이름 또는 설명)")
-    sort_option = st.selectbox("🔃 정렬 기준", ["이름순", "폴더순", "최신순"])
-
+    # 📍 북마크 추가
+    st.markdown("## 📍 북마크 추가 및 지도")
     with st.form("add_bookmark_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -73,7 +70,8 @@ if "current_user" in st.session_state:
                 })
                 st.success("✅ 북마크 추가됨")
 
-    map_center = user.get("map_center", [37.5665, 126.9780])
+    # 지도 생성
+    map_center = st.session_state.get("map_center", user.get("map_center", [37.5665, 126.9780]))
     m = folium.Map(location=map_center, zoom_start=16)
     cluster = MarkerCluster().add_to(m)
 
@@ -82,8 +80,14 @@ if "current_user" in st.session_state:
             return sorted(data, key=lambda x: x["name"])
         if method == "폴더순":
             return sorted(data, key=lambda x: (x["folder"], x["name"]))
-        return list(reversed(data))
+        return list(reversed(data))  # 최신순
 
+    all_folders = list(set(bm.get("folder", "기본") for bm in user["bookmarks"]))
+    selected_folder = st.selectbox("📂 폴더 필터", ["전체"] + sorted(all_folders))
+    query = st.text_input("🔍 북마크 검색 (이름 또는 설명)")
+    sort_option = st.selectbox("🔃 정렬 기준", ["이름순", "폴더순", "최신순"])
+
+    # 마커 표시
     sorted_bookmarks = sort_bookmarks(user["bookmarks"], sort_option)
     for bm in sorted_bookmarks:
         if selected_folder != "전체" and bm.get("folder") != selected_folder:
@@ -101,8 +105,8 @@ if "current_user" in st.session_state:
 
     st_folium(m, width=700, height=500)
 
-    # 폴더별 색상 설정 및 북마크 목록
-    st.markdown("## 🎨 폴더 색상 설정")
+    # 🎨 폴더 색상 설정
+    st.markdown("## 🎨 폴더별 색상 설정")
     for folder in sorted(all_folders):
         current_color = user["folder_colors"].get(folder, "blue")
         user["folder_colors"][folder] = st.selectbox(
@@ -111,12 +115,14 @@ if "current_user" in st.session_state:
             key=f"color_{folder}"
         )
 
+    # 📋 북마크 목록
     st.markdown("## 📋 북마크 목록")
     for i, bm in enumerate(sorted_bookmarks):
         if selected_folder != "전체" and bm.get("folder") != selected_folder:
             continue
         if query and query.lower() not in bm["name"].lower() and query.lower() not in bm["description"].lower():
             continue
+
         with st.expander(f"{bm['name']} ({bm['folder']})"):
             bm["name"] = st.text_input("이름", bm["name"], key=f"name_{i}")
             bm["description"] = st.text_input("설명", bm["description"], key=f"desc_{i}")
@@ -134,14 +140,18 @@ if "current_user" in st.session_state:
                 st.success("✔️ 수정 완료")
             if col3.button("📍 지도에서 보기", key=f"view_{i}"):
                 user["map_center"] = bm["coords"]
+                st.session_state.map_center = bm["coords"]  # 💡 반드시 동기화
                 st.rerun()
 
+    # 📥 CSV 다운로드
     if user["bookmarks"]:
         df = pd.DataFrame(user["bookmarks"])
         st.download_button("📥 CSV 다운로드", df.to_csv(index=False), "bookmarks.csv", "text/csv")
 
+    # 전체 초기화
     if st.button("🧹 전체 초기화"):
         user["bookmarks"] = []
         user["folder_colors"] = {}
         user["map_center"] = [37.5665, 126.9780]
+        st.session_state.map_center = [37.5665, 126.9780]
         st.rerun()
