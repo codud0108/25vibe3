@@ -1,3 +1,4 @@
+
 import streamlit as st
 import folium
 from folium.plugins import MarkerCluster
@@ -183,4 +184,4 @@ if "current_user" in st.session_state:
         user["folder_colors"] = {}
         user["map_center"] = [37.5665, 126.9780]
         st.session_state.map_center = [37.5665, 126.9780]
-        st.rerun()
+        st.rerun() 
