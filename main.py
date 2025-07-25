@@ -9,13 +9,13 @@ import pandas as pd
 st.set_page_config(page_title="📍 북마크 지도", layout="wide")
 st.title("📍 나만의 북마크 지도")
 
-# 세션 초기화
+# 세션 상태 초기화
 if "bookmarks" not in st.session_state:
     st.session_state.bookmarks = []
 if "folder_colors" not in st.session_state:
     st.session_state.folder_colors = {}
 if "map_center" not in st.session_state:
-    st.session_state.map_center = [37.5665, 126.9780]  # 서울 기본
+    st.session_state.map_center = [37.5665, 126.9780]  # 기본 서울
 
 # 설정값
 default_colors = ["red", "blue", "green", "purple", "orange", "darkred", "lightblue", "black"]
@@ -54,7 +54,7 @@ with st.form("add_bookmark_form"):
         loc = geolocator.geocode(address)
         if loc:
             color = st.session_state.folder_colors.get(folder, "blue")
-            new_bookmark = {
+            st.session_state.bookmarks.append({
                 "name": name.strip(),
                 "folder": folder.strip(),
                 "description": desc.strip(),
@@ -62,8 +62,7 @@ with st.form("add_bookmark_form"):
                 "coords": [loc.latitude, loc.longitude],
                 "icon": icon,
                 "color": color
-            }
-            st.session_state.bookmarks.append(new_bookmark)
+            })
             st.success(f"✅ '{name}' 북마크가 추가되었습니다.")
 
 # 정렬 함수
@@ -74,12 +73,12 @@ def sort_bookmarks(data, method):
         return sorted(data, key=lambda x: (x["folder"], x["name"]))
     return list(reversed(data))  # 최신순
 
-# 지도 생성 (중심: 최근 클릭 북마크 또는 기본)
+# 지도 생성
 map_center = st.session_state.map_center
 m = folium.Map(location=map_center, zoom_start=16)
 cluster = MarkerCluster().add_to(m)
 
-# 정렬된 북마크 필터링 및 지도 마커 표시
+# 북마크 필터링 + 지도에 표시
 sorted_bookmarks = sort_bookmarks(st.session_state.bookmarks, sort_option)
 for bm in sorted_bookmarks:
     if selected_folder != "전체" and bm.get("folder") != selected_folder:
@@ -100,7 +99,7 @@ for bm in sorted_bookmarks:
 st.markdown("### 🗺️ 북마크 지도")
 st_folium(m, width=700, height=500)
 
-# 북마크 목록 표시
+# 북마크 목록
 st.markdown("### 📋 북마크 목록")
 for i, bm in enumerate(sorted_bookmarks):
     if selected_folder != "전체" and bm.get("folder") != selected_folder:
@@ -120,14 +119,14 @@ for i, bm in enumerate(sorted_bookmarks):
         col1, col2, col3 = st.columns(3)
         if col1.button("❌ 삭제", key=f"del_{i}"):
             del st.session_state.bookmarks[i]
-            st.experimental_rerun()
+            st.rerun()
         if col2.button("✅ 저장", key=f"save_{i}"):
             st.success("✔️ 수정 완료")
         if col3.button("📍 지도에서 보기", key=f"view_{i}"):
             st.session_state.map_center = bm["coords"]
-            st.experimental_rerun()
+            st.rerun()
 
-# CSV 다운로드
+# CSV 저장
 if st.session_state.bookmarks:
     df = pd.DataFrame(st.session_state.bookmarks)
     st.download_button("📥 CSV 다운로드", df.to_csv(index=False), "bookmarks.csv", "text/csv")
@@ -137,4 +136,4 @@ if st.button("🧹 전체 초기화"):
     st.session_state.bookmarks = []
     st.session_state.folder_colors = {}
     st.session_state.map_center = [37.5665, 126.9780]
-    st.experimental_rerun()
+    st.rerun()
