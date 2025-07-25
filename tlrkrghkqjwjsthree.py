@@ -12,7 +12,7 @@ if uploaded_file:
         # 파일 읽기
         df = pd.read_csv(uploaded_file, encoding="utf-8")
 
-        # 첫 번째 행을 컬럼으로 사용
+        # 첫 행을 컬럼으로
         df.columns = df.iloc[0]
         df = df[1:].copy()
         df.columns.name = None
@@ -20,16 +20,29 @@ if uploaded_file:
         df.rename(columns={"관측지점별(1)": "지점"}, inplace=True)
         df.columns = df.columns.str.strip()
 
-        # 지점 선택
+        # ---------- 항목(변수) 선택 ----------
+        variable_row = df[df["지점"] == "지점"]  # 1행 아래 항목 정보 있는 행
+        df = df[df["지점"] != "지점"]  # 실제 데이터만 남김
+        variable_row = variable_row.iloc[0]  # 시리즈로
+
+        # 날짜 컬럼 중 시계열에 해당하는 열 추출
+        date_columns = [col for col in df.columns if "." in col and col.count(".") == 2]
+
+        # 날짜별 항목 리스트 추출
+        available_metrics = sorted(set([variable_row[col] for col in date_columns if variable_row[col] != "-"]))
+
+        selected_metric = st.selectbox("📈 시각화할 항목을 선택하세요:", available_metrics)
+
+        # ---------- 지점 선택 ----------
         unique_stations = df["지점"].unique().tolist()
         selected_stations = st.multiselect("📍 시각화할 지점을 선택하세요:", unique_stations, default=unique_stations[:3])
-
-        # 날짜 컬럼 추출 (yyyy.mm.dd 형태만 선택)
-        date_columns = [col for col in df.columns if "." in col and col.count(".") == 2]
 
         if not selected_stations:
             st.warning("⚠️ 최소 하나 이상의 지점을 선택해주세요.")
         else:
+            # 선택한 항목에 해당하는 날짜 컬럼만 선택
+            selected_date_cols = [col for col in date_columns if variable_row[col] == selected_metric]
+
             fig = go.Figure()
 
             for station in selected_stations:
@@ -37,7 +50,7 @@ if uploaded_file:
                 y = []
                 x = []
 
-                for date_col in date_columns:
+                for date_col in selected_date_cols:
                     try:
                         y_val = float(row[date_col])
                         y.append(y_val)
@@ -53,9 +66,9 @@ if uploaded_file:
                 ))
 
             fig.update_layout(
-                title="지점별 기상 통계 시계열 변화",
+                title=f"{selected_metric} - 지점별 시계열 변화",
                 xaxis_title="날짜",
-                yaxis_title="값",
+                yaxis_title=selected_metric,
                 template="plotly_white",
                 height=600
             )
