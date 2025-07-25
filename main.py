@@ -1,3 +1,43 @@
+import streamlit as st
+import folium
+from folium.plugins import MarkerCluster
+from streamlit_folium import st_folium
+from geopy.geocoders import Nominatim
+import pandas as pd
+
+# 기본 설정
+st.set_page_config(page_title="📍 북마크 지도", layout="wide")
+st.title("📍 나만의 북마크 지도")
+
+# 세션 초기화
+if "bookmarks" not in st.session_state:
+    st.session_state.bookmarks = []
+if "folder_colors" not in st.session_state:
+    st.session_state.folder_colors = {}
+
+# 설정값
+default_location = [37.5665, 126.9780]  # 서울
+default_colors = ["red", "blue", "green", "purple", "orange", "darkred", "lightblue", "black"]
+icons = ["info-sign", "home", "star", "flag", "cloud", "heart", "gift", "leaf"]
+geolocator = Nominatim(user_agent="bookmark_app")
+
+# 필터 UI
+all_folders = list(set(bm.get("folder", "기본") for bm in st.session_state.bookmarks))
+selected_folder = st.selectbox("📂 폴더 필터", ["전체"] + sorted(all_folders))
+query = st.text_input("🔍 북마크 검색 (이름 또는 설명)")
+sort_option = st.selectbox("🔃 정렬 기준", ["이름순", "폴더순", "최신순"])
+
+# 폴더별 색상 설정
+st.markdown("### 🎨 폴더별 색상 설정")
+for folder in sorted(all_folders):
+    current_color = st.session_state.folder_colors.get(folder, "blue")
+    st.session_state.folder_colors[folder] = st.selectbox(
+        f"폴더: {folder}", default_colors,
+        index=default_colors.index(current_color) if current_color in default_colors else 0,
+        key=f"color_{folder}"
+    )
+
+# 북마크 추가 폼
 with st.form("add_bookmark_form"):
     st.markdown("### ➕ 북마크 추가")
     col1, col2 = st.columns(2)
@@ -9,12 +49,11 @@ with st.form("add_bookmark_form"):
         address = st.text_input("주소")
         icon = st.selectbox("아이콘", icons)
 
-    add_clicked = st.form_submit_button("추가")
-    if add_clicked and name and address:
+    if st.form_submit_button("추가") and name and address:
         loc = geolocator.geocode(address)
         if loc:
             color = st.session_state.folder_colors.get(folder, "blue")
-            new_entry = {
+            new_bookmark = {
                 "name": name.strip(),
                 "folder": folder.strip(),
                 "description": desc.strip(),
@@ -23,10 +62,73 @@ with st.form("add_bookmark_form"):
                 "icon": icon,
                 "color": color
             }
-            if new_entry not in st.session_state.bookmarks:
-                st.session_state.bookmarks.append(new_entry)
-                st.success(f"✅ '{name}' 북마크 추가됨")
-            else:
-                st.warning("⚠️ 이미 동일한 북마크가 존재합니다.")
-        else:
-            st.error("❌ 주소를 찾을 수 없습니다.")
+            st.session_state.bookmarks.append(new_bookmark)
+            st.success(f"✅ '{name}' 북마크가 추가되었습니다.")
+
+# 정렬 함수
+def sort_bookmarks(data, method):
+    if method == "이름순":
+        return sorted(data, key=lambda x: x["name"])
+    if method == "폴더순":
+        return sorted(data, key=lambda x: (x["folder"], x["name"]))
+    return list(reversed(data))  # 최신순
+
+# 지도 생성 및 마커 클러스터
+m = folium.Map(location=default_location, zoom_start=13)
+cluster = MarkerCluster().add_to(m)
+
+# 정렬된 북마크 필터링
+sorted_bookmarks = sort_bookmarks(st.session_state.bookmarks, sort_option)
+for bm in sorted_bookmarks:
+    if selected_folder != "전체" and bm.get("folder") != selected_folder:
+        continue
+    if query and query.lower() not in bm["name"].lower() and query.lower() not in bm["description"].lower():
+        continue
+
+    folium.Marker(
+        location=bm["coords"],
+        popup=f"<b>{bm['name']}</b><br>{bm.get('folder')}<br>{bm.get('description')}<br>{bm.get('address')}",
+        icon=folium.Icon(
+            color=st.session_state.folder_colors.get(bm["folder"], "blue"),
+            icon=bm["icon"], prefix="fa"
+        )
+    ).add_to(cluster)
+
+# 지도 출력
+st.markdown("### 🗺️ 북마크 지도")
+st_folium(m, width=700, height=500)
+
+# 북마크 목록
+st.markdown("### 📋 북마크 목록")
+for i, bm in enumerate(sorted_bookmarks):
+    if selected_folder != "전체" and bm.get("folder") != selected_folder:
+        continue
+    if query and query.lower() not in bm["name"].lower() and query.lower() not in bm["description"].lower():
+        continue
+
+    with st.expander(f"{bm['name']} ({bm['folder']})"):
+        bm["name"] = st.text_input("이름", value=bm["name"], key=f"name_{i}")
+        bm["description"] = st.text_input("설명", value=bm["description"], key=f"desc_{i}")
+        bm["folder"] = st.text_input("폴더", value=bm["folder"], key=f"folder_{i}")
+        bm["icon"] = st.selectbox("아이콘", icons, index=icons.index(bm["icon"]), key=f"icon_{i}")
+        bm["color"] = st.session_state.folder_colors.get(bm["folder"], "blue")
+        st.text(f"📍 좌표: {bm['coords'][0]:.5f}, {bm['coords'][1]:.5f}")
+        st.text(f"🏠 주소: {bm.get('address','')}")
+
+        col1, col2 = st.columns(2)
+        if col1.button("❌ 삭제", key=f"del_{i}"):
+            del st.session_state.bookmarks[i]
+            st.experimental_rerun()
+        if col2.button("✅ 저장", key=f"save_{i}"):
+            st.success("✔️ 수정 완료")
+
+# CSV 저장
+if st.session_state.bookmarks:
+    df = pd.DataFrame(st.session_state.bookmarks)
+    st.download_button("📥 CSV 다운로드", df.to_csv(index=False), "bookmarks.csv", "text/csv")
+
+# 초기화 버튼
+if st.button("🧹 전체 초기화"):
+    st.session_state.bookmarks = []
+    st.session_state.folder_colors = {}
+    st.experimental_rerun()
