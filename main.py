@@ -1,3 +1,3 @@
 import streamlit as st
-title('my 4th web')
-write('wellcome!')
+st.title('my 4th web')
+st.write('wellcome!')
