@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import io
 
 st.set_page_config(page_title="컴퓨터·태블릿 활동 분석", layout="wide")
 st.title("💻 성별에 따른 컴퓨터·태블릿 활용 활동 비율 (2024)")
@@ -9,11 +10,14 @@ st.title("💻 성별에 따른 컴퓨터·태블릿 활용 활동 비율 (2024)
 uploaded_file = st.file_uploader("📂 CSV 파일을 업로드하세요", type=["csv"])
 
 if uploaded_file:
-    # CSV 읽기
+    # CSV 파일 디코딩 (euc-kr 또는 utf-8 시도)
     try:
-        df = pd.read_csv(uploaded_file, encoding="utf-8")
+        # 바이너리 → 텍스트로 변환
+        stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
+        df = pd.read_csv(stringio)
     except UnicodeDecodeError:
-        df = pd.read_csv(uploaded_file, encoding="euc-kr")
+        stringio = io.StringIO(uploaded_file.getvalue().decode("euc-kr"))
+        df = pd.read_csv(stringio)
 
     # 첫 번째 행을 컬럼으로 설정
     df.columns = df.iloc[0]
