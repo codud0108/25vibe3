@@ -70,24 +70,28 @@ if "current_user" in st.session_state:
                 })
                 st.success("✅ 북마크 추가됨")
 
-    # 지도 생성
+    # 지도 중심 위치
     map_center = st.session_state.get("map_center", user.get("map_center", [37.5665, 126.9780]))
     m = folium.Map(location=map_center, zoom_start=16)
     cluster = MarkerCluster().add_to(m)
 
+    # 클릭 이벤트를 위한 숨겨진 상태값
+    if "clicked_location" not in st.session_state:
+        st.session_state.clicked_location = None
+
+    # 마커 표시
     def sort_bookmarks(data, method):
         if method == "이름순":
             return sorted(data, key=lambda x: x["name"])
         if method == "폴더순":
             return sorted(data, key=lambda x: (x["folder"], x["name"]))
-        return list(reversed(data))  # 최신순
+        return list(reversed(data))
 
     all_folders = list(set(bm.get("folder", "기본") for bm in user["bookmarks"]))
     selected_folder = st.selectbox("📂 폴더 필터", ["전체"] + sorted(all_folders))
     query = st.text_input("🔍 북마크 검색 (이름 또는 설명)")
     sort_option = st.selectbox("🔃 정렬 기준", ["이름순", "폴더순", "최신순"])
 
-    # 마커 표시
     sorted_bookmarks = sort_bookmarks(user["bookmarks"], sort_option)
     for bm in sorted_bookmarks:
         if selected_folder != "전체" and bm.get("folder") != selected_folder:
@@ -103,7 +107,33 @@ if "current_user" in st.session_state:
             )
         ).add_to(cluster)
 
-    st_folium(m, width=700, height=500)
+    # 지도 클릭 이벤트 처리용 JavaScript
+    m.add_child(folium.LatLngPopup())
+    folium.Marker(location=map_center, popup="중심 위치").add_to(m)
+
+    result = st_folium(m, width=700, height=500)
+
+    if result and result.get("last_clicked"):
+        latlng = result["last_clicked"]
+        st.session_state.clicked_location = latlng
+        st.success(f"🆕 클릭된 위치: {latlng['lat']:.5f}, {latlng['lng']:.5f}")
+        with st.form("map_click_form"):
+            name = st.text_input("이름 (지도 클릭 추가)", key="click_name")
+            folder = st.text_input("폴더", value="기본", key="click_folder")
+            desc = st.text_input("설명", key="click_desc")
+            icon = st.selectbox("아이콘", icons, key="click_icon")
+            if st.form_submit_button("지도 위치로 추가"):
+                user["bookmarks"].append({
+                    "name": name.strip(),
+                    "folder": folder.strip(),
+                    "description": desc.strip(),
+                    "address": "(지도 클릭 입력)",
+                    "coords": [latlng["lat"], latlng["lng"]],
+                    "icon": icon,
+                    "color": user["folder_colors"].get(folder, "blue")
+                })
+                st.success("✅ 지도에서 북마크 추가됨")
+                st.rerun()
 
     # 🎨 폴더 색상 설정
     st.markdown("## 🎨 폴더별 색상 설정")
@@ -122,7 +152,6 @@ if "current_user" in st.session_state:
             continue
         if query and query.lower() not in bm["name"].lower() and query.lower() not in bm["description"].lower():
             continue
-
         with st.expander(f"{bm['name']} ({bm['folder']})"):
             bm["name"] = st.text_input("이름", bm["name"], key=f"name_{i}")
             bm["description"] = st.text_input("설명", bm["description"], key=f"desc_{i}")
@@ -140,7 +169,7 @@ if "current_user" in st.session_state:
                 st.success("✔️ 수정 완료")
             if col3.button("📍 지도에서 보기", key=f"view_{i}"):
                 user["map_center"] = bm["coords"]
-                st.session_state.map_center = bm["coords"]  # 💡 반드시 동기화
+                st.session_state.map_center = bm["coords"]
                 st.rerun()
 
     # 📥 CSV 다운로드
